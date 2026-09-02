@@ -1,0 +1,310 @@
+-- Тестирование по принципам Майерса
+
+-- Принцип 1: Определение ожидаемого результата
+
+INSERT INTO employees (last_name, first_name, patronymic, date_of_birth, email, phone_number)
+VALUES ('Тестовый', 'Тест', 'Тестович', '1990-01-01', 'test@company.com', '+7(999)123-45-67');
+
+SELECT employee_id, last_name, first_name, patronymic, date_of_birth, email, phone_number
+FROM employees WHERE email = 'test@company.com';
+
+DELETE FROM employees WHERE email = 'test@company.com';
+
+INSERT INTO employees (last_name, first_name, date_of_birth, email)
+VALUES ('Ошибочный', 'Email', '1990-01-01', 'invalid_email');
+
+INSERT INTO employees_salaries (employee_id, salary_amount, start_date)
+VALUES (1, 5000, '2024-01-01');
+
+DELETE FROM employees_salaries WHERE employee_id = 1 AND salary_amount = 5000 AND start_date = '2024-01-01';
+
+-- Принцип 2-3: Независимое тестирование
+
+SELECT e.employee_id, e.last_name, e.first_name
+FROM employees e
+LEFT JOIN employees_x_branches exb ON e.employee_id = exb.employee_id
+WHERE exb.employee_id IS NULL;
+
+SELECT e.employee_id, e.last_name, es.salary_amount, p.min_salary, p.max_salary, p.position_name
+FROM employees e
+JOIN employees_x_positions exp ON e.employee_id = exp.employee_id AND exp.end_date IS NULL
+JOIN positions p ON exp.position_id = p.position_id
+JOIN employees_salaries es ON e.employee_id = es.employee_id AND es.end_date IS NULL
+WHERE es.salary_amount < p.min_salary OR es.salary_amount > p.max_salary;
+
+SELECT email, COUNT(*) FROM employees GROUP BY email HAVING COUNT(*) > 1;
+
+SELECT branch_name, COUNT(*) FROM branches GROUP BY branch_name HAVING COUNT(*) > 1;
+
+SELECT country_name, COUNT(*) FROM countries GROUP BY country_name HAVING COUNT(*) > 1;
+
+-- Принцип 4: Тщательная проверка результатов
+
+SELECT employee_id, phone_number
+FROM employees
+WHERE phone_number !~ '^\+7\(\d{3}\)\d{3}-\d{2}-\d{2}$' OR phone_number IS NULL;
+
+SELECT a.accrual_id, e.last_name, at.type_name, a.summa, a.accrual_date
+FROM accruals a
+JOIN employees e ON a.employee_id = e.employee_id
+JOIN accurals_type at ON a.accrual_type_id = at.accrual_type_id
+WHERE a.summa <= 0 OR a.accrual_date > CURRENT_DATE OR a.accrual_date < '2020-01-01';
+
+SELECT 'branches' AS table_name, COUNT(*) AS invalid_records
+FROM employees_x_branches WHERE end_date IS NOT NULL AND start_date > end_date
+UNION ALL
+SELECT 'positions', COUNT(*) FROM employees_x_positions WHERE end_date IS NOT NULL AND start_date > end_date
+UNION ALL
+SELECT 'salaries', COUNT(*) FROM employees_salaries WHERE end_date IS NOT NULL AND start_date > end_date;
+
+SELECT e.employee_id, e.last_name, e.first_name, COUNT(exb.employee_branch_id) AS branch_count
+FROM employees e
+LEFT JOIN employees_x_branches exb ON e.employee_id = exb.employee_id AND exb.end_date IS NULL
+GROUP BY e.employee_id, e.last_name, e.first_name
+HAVING COUNT(exb.employee_branch_id) = 0;
+
+-- Принцип 5: Тест-кейсы для некорректных данных
+
+INSERT INTO employees_salaries (employee_id, salary_amount, start_date)
+VALUES (1, -50000, '2024-01-01');
+
+INSERT INTO employees_x_branches (employee_id, branch_id, start_date)
+VALUES (9999, 1, '2024-01-01');
+
+INSERT INTO employees (last_name, first_name, date_of_birth, email)
+VALUES ('', 'Тест', '1990-01-01', 'empty@test.com');
+
+DELETE FROM employees WHERE email = 'empty@test.com';
+
+INSERT INTO employees (last_name, first_name, date_of_birth, email)
+VALUES ('Будущий', 'Сотрудник', '2030-01-01', 'future@test.com');
+
+DELETE FROM employees WHERE email = 'future@test.com';
+
+INSERT INTO employees (last_name, first_name, date_of_birth, email, phone_number)
+VALUES ('Неверный', 'Телефон', '1990-01-01', 'wrongphone@test.com', '123-45-67');
+
+INSERT INTO positions (department_id, position_name, min_salary, max_salary)
+VALUES (1, 'Test Position', 100000, 50000);
+
+INSERT INTO accruals (employee_id, accrual_type_id, summa, accrual_date)
+VALUES (1, 1, 0, '2024-01-01');
+
+-- Принцип 6: Проверка нежелательных побочных эффектов
+
+BEGIN;
+UPDATE employees_salaries SET salary_amount = 100000 WHERE employee_id = 1 AND end_date IS NULL;
+SELECT COUNT(*) AS emp_count FROM employees WHERE employee_id = 1;
+SELECT COUNT(*) AS pos_count FROM employees_x_positions WHERE employee_id = 1;
+SELECT COUNT(*) AS acc_count FROM accruals WHERE employee_id = 1;
+ROLLBACK;
+
+BEGIN;
+DELETE FROM countries WHERE country_id = 1;
+ROLLBACK;
+
+BEGIN;
+UPDATE employees_x_positions SET position_id = 2 WHERE employee_id = 1 AND end_date IS NULL;
+SELECT COUNT(*) FROM employees_x_positions WHERE employee_id = 1 AND end_date IS NULL;
+ROLLBACK;
+
+BEGIN;
+DELETE FROM departments WHERE department_id = 1;
+ROLLBACK;
+
+-- Принцип 7: Многоразовые тест-кейсы
+
+CREATE OR REPLACE FUNCTION test_database_integrity()
+RETURNS TABLE(test_name TEXT, test_result BOOLEAN, error_message TEXT) AS $$
+DECLARE
+    v_count INT;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM employees e
+    LEFT JOIN employees_x_branches exb ON e.employee_id = exb.employee_id
+    WHERE exb.employee_id IS NULL;
+    
+    test_name := 'Все сотрудники имеют филиалы';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено сотрудников без филиала: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+
+    SELECT COUNT(*) INTO v_count
+    FROM branches b
+    LEFT JOIN locations l ON b.location_id = l.location_id
+    WHERE l.location_id IS NULL;
+    
+    test_name := 'Все филиалы имеют локации';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено филиалов без локации: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+
+    SELECT COUNT(*) INTO v_count
+    FROM employees e
+    JOIN employees_x_positions exp ON e.employee_id = exp.employee_id AND exp.end_date IS NULL
+    JOIN positions p ON exp.position_id = p.position_id
+    JOIN employees_salaries es ON e.employee_id = es.employee_id AND es.end_date IS NULL
+    WHERE es.salary_amount < p.min_salary OR es.salary_amount > p.max_salary;
+    
+    test_name := 'Зарплаты в допустимых пределах';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено зарплат вне диапазона: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+
+    SELECT COUNT(*) INTO v_count
+    FROM (SELECT email FROM employees GROUP BY email HAVING COUNT(*) > 1) duplicates;
+    
+    test_name := 'Нет дубликатов email';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено дубликатов email: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+
+    SELECT COUNT(*) INTO v_count
+    FROM employees_x_branches WHERE end_date IS NOT NULL AND start_date > end_date;
+    
+    test_name := 'Даты филиалов корректны';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено некорректных дат: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+
+    SELECT COUNT(*) INTO v_count
+    FROM employees_x_positions WHERE end_date IS NOT NULL AND start_date > end_date;
+    
+    test_name := 'Даты должностей корректны';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено некорректных дат: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+
+    SELECT COUNT(*) INTO v_count
+    FROM employees_salaries WHERE end_date IS NOT NULL AND start_date > end_date;
+    
+    test_name := 'Даты зарплат корректны';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено некорректных дат: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+
+    SELECT COUNT(*) INTO v_count
+    FROM positions WHERE min_salary > max_salary;
+    
+    test_name := 'Диапазоны зарплат корректны';
+    test_result := (v_count = 0);
+    error_message := CASE WHEN v_count > 0 THEN 'Найдено некорректных диапазонов: ' || v_count ELSE NULL END;
+    RETURN NEXT;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM test_database_integrity();
+
+DROP FUNCTION IF EXISTS test_database_integrity();
+
+-- Принцип 8: Поиск ошибок
+
+SELECT last_name, first_name, patronymic, date_of_birth, COUNT(*)
+FROM employees
+GROUP BY last_name, first_name, patronymic, date_of_birth
+HAVING COUNT(*) > 1;
+
+SELECT DISTINCT e.employee_id, e.last_name, e.first_name
+FROM employees e
+JOIN employees_x_branches exb ON e.employee_id = exb.employee_id
+WHERE exb.is_manager = TRUE AND exb.end_date IS NULL
+AND NOT EXISTS (
+    SELECT 1 FROM employees_x_branches exb2
+    WHERE exb2.branch_id = exb.branch_id 
+    AND exb2.employee_id != exb.employee_id
+    AND exb2.end_date IS NULL
+);
+
+SELECT employee_id, COUNT(*)
+FROM employees_x_positions
+WHERE end_date IS NULL
+GROUP BY employee_id
+HAVING COUNT(*) > 1;
+
+SELECT employee_id, COUNT(*)
+FROM employees_x_branches
+WHERE end_date IS NULL
+GROUP BY employee_id
+HAVING COUNT(*) > 1;
+
+SELECT employee_id, COUNT(*)
+FROM employees_salaries
+WHERE end_date IS NULL
+GROUP BY employee_id
+HAVING COUNT(*) > 1;
+
+-- Принцип 9: Концентрация на проблемных областях
+
+SELECT 'employees' AS module, COUNT(*) AS error_count
+FROM employees
+WHERE email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+   OR phone_number !~ '^\+7\(\d{3}\)\d{3}-\d{2}-\d{2}$'
+UNION ALL
+SELECT 'branches', COUNT(*)
+FROM branches
+WHERE branch_email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+UNION ALL
+SELECT 'positions', COUNT(*)
+FROM positions
+WHERE min_salary > max_salary OR min_salary < 0 OR max_salary < 0
+UNION ALL
+SELECT 'accruals', COUNT(*)
+FROM accruals
+WHERE summa <= 0 OR accrual_date > CURRENT_DATE;
+
+WITH problem_employees AS (
+    SELECT e.employee_id, e.last_name,
+           (SELECT COUNT(*) FROM accruals a WHERE a.employee_id = e.employee_id) as accrual_count,
+           (SELECT COUNT(DISTINCT exb.branch_id) FROM employees_x_branches exb 
+            WHERE exb.employee_id = e.employee_id AND exb.end_date IS NULL) as active_branches
+    FROM employees e
+)
+SELECT * FROM problem_employees
+WHERE accrual_count > 5 OR active_branches > 1;
+
+-- Принцип 10: Творческий подход
+
+INSERT INTO employees (last_name, first_name, date_of_birth, email)
+VALUES ('O''Brien', 'Robert', '1990-01-01', 'obrien@test.com');
+
+DELETE FROM employees WHERE email = 'obrien@test.com';
+
+INSERT INTO employees (last_name, first_name, date_of_birth, email)
+VALUES ('A', 'B', '1900-01-01', 'min@test.com');
+
+DELETE FROM employees WHERE email = 'min@test.com';
+
+INSERT INTO employees (last_name, first_name, date_of_birth, email)
+VALUES (REPEAT('Z', 100), REPEAT('Y', 100), '2099-12-31', 'max@test.com');
+
+DELETE FROM employees WHERE email = 'max@test.com';
+
+UPDATE employees SET patronymic = NULL WHERE employee_id = 5;
+SELECT * FROM employees WHERE employee_id = 5;
+UPDATE employees SET patronymic = 'Владимирович' WHERE employee_id = 5;
+
+BEGIN;
+INSERT INTO employees (last_name, first_name, date_of_birth, email)
+VALUES ('Тест', 'Откат', '1990-01-01', 'rollback@test.com');
+ROLLBACK;
+SELECT * FROM employees WHERE email = 'rollback@test.com';
+
+SELECT 'Всего сотрудников' AS metric, COUNT(*) AS value FROM employees
+UNION ALL
+SELECT 'Сотрудников с валидным email', COUNT(*) FROM employees 
+WHERE email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+UNION ALL
+SELECT 'Сотрудников с валидным телефоном', COUNT(*) FROM employees 
+WHERE phone_number ~ '^\+7\(\d{3}\)\d{3}-\d{2}-\d{2}$'
+UNION ALL
+SELECT 'Всего филиалов', COUNT(*) FROM branches
+UNION ALL
+SELECT 'Всего должностей', COUNT(*) FROM positions
+UNION ALL
+SELECT 'Всего начислений', COUNT(*) FROM accruals
+UNION ALL
+SELECT 'Начислений на сумму > 20000', COUNT(*) FROM accruals WHERE summa > 20000
+UNION ALL
+SELECT 'Менеджеров', COUNT(DISTINCT employee_id) FROM employees_x_branches WHERE is_manager = TRUE
+UNION ALL
+SELECT 'Активных сотрудников', COUNT(DISTINCT employee_id) FROM employees_x_branches WHERE end_date IS NULL;s
