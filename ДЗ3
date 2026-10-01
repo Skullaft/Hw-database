@@ -1,0 +1,188 @@
+-- Задание 1
+select d.department_name as "НАЗВАНИЕ_ОТДЕЛА", e.employee_email as "ПОЧТА_СОТРУДНИКА", col.employee_email as "ПОЧТА_КОЛЛЕГИ"
+from employees e
+join departments d on e.department_id = d.department_id
+join employees col on col.department_id = e.department_id and col.employee_id <> e.employee_id
+order by d.department_name, e.employee_email, col.employee_email;
+
+-- Задание 2
+select d.department_name as "НАЗВАНИЕ_ОТДЕЛА", e.last_name as "ФАМИЛИЯ", e.first_name as "ИМЯ", e.patronymic as "ОТЧЕСТВО",
+case
+when (2024 - year(e.hire_date)) % 10 = 0 and (2024 - year(e.hire_date)) > 0 then '10 лет'
+when (2024 - year(e.hire_date)) % 5 = 0 and (2024 - year(e.hire_date)) > 0 then '5 лет'
+else 'Без сувенира'
+end as "СУВЕНИР"
+from employees e
+join departments d on e.department_id = d.department_id
+order by d.department_name, e.last_name, e.first_name;
+
+-- Задание 3
+select d.department_name as "НАЗВАНИЕ_ОТДЕЛА", p.position_name as "НАЗВАНИЕ_ДОЛЖНОСТИ", min(s.salary) as "МИНИМАЛЬНАЯ_ЗАРПЛАТА", max(s.salary) as "МАКСИМАЛЬНАЯ_ЗАРПЛАТА"
+from employees e
+join departments d on e.department_id = d.department_id
+join positions p on e.position_id = p.position_id
+join salaries s on s.employee_id = e.employee_id
+where s.end_date is null and p.position_name not in ('Директор', 'Руководитель')
+group by d.department_name, p.position_name
+order by d.department_name, p.position_name;
+
+-- Задание 4
+select c.country_name as "НАЗВАНИЕ_СТРАНЫ", count(e.employee_id) as "КОЛИЧЕСТВО_СОТРУДНИКОВ"
+from countries c
+join branches b on b.country_id = c.country_id
+join employees e on e.branch_id = b.branch_id
+group by c.country_name
+order by c.country_name;
+
+-- Задание 5
+select d.department_name as "НАЗВАНИЕ_ОТДЕЛА", p.position_name as "НАЗВАНИЕ_ДОЛЖНОСТИ", count(*) as "КОЛИЧЕСТВО_ВАКАНСИЙ"
+from vacancies v
+join departments d on v.department_id = d.department_id
+join positions p on v.position_id = p.position_id
+group by d.department_name, p.position_name
+order by "КОЛИЧЕСТВО_ВАКАНСИЙ" desc, d.department_name, p.position_name;
+
+-- Задание 6
+select e.first_name as "ИМЯ", e.last_name as "ФАМИЛИЯ", e.employee_id as "ИД_СОТРУДНИКА", p.position_name as "НАЗВАНИЕ_ДОЛЖНОСТИ"
+from employees e
+join positions p on e.position_id = p.position_id
+join position_history ph on ph.employee_id = e.employee_id
+where e.end_date is null and ph.end_date is null and ph.start_date <= '2020-09-25'
+order by e.first_name, e.last_name, p.position_name;
+
+-- Задание 7
+select p.position_name as "НАЗВАНИЕ_ДОЛЖНОСТИ", sum(s.salary) as "СУММА_ЗАРПЛАТ"
+from salaries s
+join employees e on e.employee_id = s.employee_id
+join positions p on p.position_id = e.position_id
+where s.end_date is null
+group by p.position_name
+order by "СУММА_ЗАРПЛАТ" desc;
+
+-- Задание 8
+select e.last_name as "ФАМИЛИЯ", e.first_name as "ИМЯ", e.patronymic as "ОТЧЕСТВО", old_b.branch_name as "СТАРЫЙ_ФИЛИАЛ", bh.start_date as "ДАТА_ПЕРЕВОДА"
+from branch_history bh
+join employees e on e.employee_id = bh.employee_id
+join branches new_b on new_b.branch_id = bh.branch_id
+join countries c on c.country_id = new_b.country_id
+join branches old_b on old_b.branch_id = bh.old_branch_id
+where c.country_name = 'Кипр'
+order by e.last_name, e.first_name, e.patronymic;
+
+-- Задание 9
+select e.first_name as "ИМЯ", e.last_name as "ФАМИЛИЯ", old_p.position_name as "СТАРАЯ_ДОЛЖНОСТЬ", new_p.position_name as "НОВАЯ_ДОЛЖНОСТЬ"
+from position_history ph
+join employees e on e.employee_id = ph.employee_id
+join positions old_p on old_p.position_id = ph.old_position_id
+join positions new_p on new_p.position_id = ph.position_id
+where year(ph.start_date) = 2014
+order by e.first_name, e.last_name;
+
+-- Задание 10
+select e.first_name as "ИМЯ", e.last_name as "ФАМИЛИЯ", ci.city_name as "НАЗВАНИЕ_ГОРОДА"
+from employees e
+join branches b on b.branch_id = e.branch_id
+join cities ci on ci.city_id = b.city_id
+where e.end_date is null
+order by ci.city_name, e.last_name, e.first_name;
+
+-- Задание 11
+with numbered as (
+select b.branch_name, e.last_name || ' ' || e.first_name || ' ' || coalesce(e.patronymic, '') as ФИО,
+row_number() over (partition by b.branch_id order by e.last_name, e.first_name) as rn
+from employees e
+join branches b on b.branch_id = e.branch_id
+where e.end_date is null
+)
+select distinct branch_name as "НАЗВАНИЕ_ФИЛИАЛА",
+nth_value(victim, 5) over (partition by branch_name order by rn rows between unbounded preceding and unbounded following) as "ФИО_СОТРУДНИКА"
+from numbered
+order by branch_name;
+
+-- Задание 12
+select
+case
+when s.salary < 50000 then 'Низкий уровень'
+when s.salary < 100000 then 'Средний уровень'
+else 'Высокий уровень'
+end as "УРОВЕНЬ_ЗАРПЛАТЫ",
+sum(s.salary) as "ОБЩАЯ_СУММА"
+from salaries s
+group by
+case
+when s.salary < 50000 then 'Низкий уровень'
+when s.salary < 100000 then 'Средний уровень'
+else 'Высокий уровень'
+end;
+
+-- Задание 13
+select b.branch_name as "НАЗВАНИЕ_ФИЛИАЛА", c.country_name as "НАЗВАНИЕ_СТРАНЫ", count(e.employee_id) as "КОЛИЧЕСТВО_СОТРУДНИКОВ"
+from branches b
+join countries c on c.country_id = b.country_id
+left join employees e on e.branch_id = b.branch_id and e.end_date is null
+group by b.branch_name, c.country_name
+order by c.country_name, b.branch_name;
+
+-- Задание 14
+select e.last_name as "ФАМИЛИЯ", e.first_name as "ИМЯ", e.patronymic as "ОТЧЕСТВО", count(*) as "КОЛИЧЕСТВО_ВОЗВРАЩЕНИЙ"
+from employees e
+join employment_history eh on eh.employee_id = e.employee_id
+where eh.event_type = 'return'
+group by e.last_name, e.first_name, e.patronymic
+order by "КОЛИЧЕСТВО_ВОЗВРАЩЕНИЙ" desc;
+
+-- Задание 15
+select d.department_name as "НАЗВАНИЕ_ОТДЕЛА",
+sum(case when year(s.payment_date) = 2020 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2019 then s.salary else 0 end) as "РАЗНИЦА_19_20",
+sum(case when year(s.payment_date) = 2021 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2020 then s.salary else 0 end) as "РАЗНИЦА_20_21",
+sum(case when year(s.payment_date) = 2022 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2021 then s.salary else 0 end) as "РАЗНИЦА_21_22",
+sum(case when year(s.payment_date) = 2023 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2022 then s.salary else 0 end) as "РАЗНИЦА_22_23",
+sum(case when year(s.payment_date) = 2024 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2023 then s.salary else 0 end) as "РАЗНИЦА_23_24"
+from salaries s
+join employees e on e.employee_id = s.employee_id
+join departments d on d.department_id = e.department_id
+where year(s.payment_date) between 2019 and 2024
+group by d.department_name
+order by d.department_name;
+
+-- Задание 16
+select d.department_name as "НАЗВАНИЕ_ОТДЕЛА", '2020 и 2019' as "ГОДЫ_РАЗНИЦЫ",
+sum(case when year(s.payment_date) = 2020 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2019 then s.salary else 0 end) as "РАЗНИЦА_ФОНДА"
+from salaries s
+join employees e on e.employee_id = s.employee_id
+join departments d on d.department_id = e.department_id
+where year(s.payment_date) in (2019, 2020)
+group by d.department_name
+union all
+select d.department_name, '2021 и 2020',
+sum(case when year(s.payment_date) = 2021 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2020 then s.salary else 0 end)
+from salaries s
+join employees e on e.employee_id = s.employee_id
+join departments d on d.department_id = e.department_id
+where year(s.payment_date) in (2020, 2021)
+group by d.department_name
+union all
+select d.department_name, '2022 и 2021',
+sum(case when year(s.payment_date) = 2022 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2021 then s.salary else 0 end)
+from salaries s
+join employees e on e.employee_id = s.employee_id
+join departments d on d.department_id = e.department_id
+where year(s.payment_date) in (2021, 2022)
+group by d.department_name
+union all
+select d.department_name, '2023 и 2022',
+sum(case when year(s.payment_date) = 2023 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2022 then s.salary else 0 end)
+from salaries s
+join employees e on e.employee_id = s.employee_id
+join departments d on d.department_id = e.department_id
+where year(s.payment_date) in (2022, 2023)
+group by d.department_name
+union all
+select d.department_name, '2024 и 2023',
+sum(case when year(s.payment_date) = 2024 then s.salary else 0 end) - sum(case when year(s.payment_date) = 2023 then s.salary else 0 end)
+from salaries s
+join employees e on e.employee_id = s.employee_id
+join departments d on d.department_id = e.department_id
+where year(s.payment_date) in (2023, 2024)
+group by d.department_name
+order by "НАЗВАНИЕ_ОТДЕЛА", "ГОДЫ_РАЗНИЦЫ";
