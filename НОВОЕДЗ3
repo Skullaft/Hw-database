@@ -1,0 +1,200 @@
+-- Задание 1
+SELECT d.department_name, e.email, STRING_AGG(c.email, ', ' ORDER BY c.email)
+FROM employees_x_positions ep
+JOIN positions p USING(position_id)
+JOIN departments d USING(department_id)
+JOIN employees e USING(employee_id)
+JOIN employees_x_positions ep2 ON ep2.position_id = ep.position_id AND ep2.employee_id <> ep.employee_id AND ep2.end_date IS NULL
+JOIN employees c ON c.employee_id = ep2.employee_id
+WHERE ep.end_date IS NULL
+GROUP BY d.department_name, e.email
+ORDER BY 1, 2;
+
+-- Задание 2
+SELECT d.department_name, e.last_name, e.first_name, e.patronymic,
+CASE WHEN EXTRACT(YEAR FROM AGE(DATE '2024-10-12', MIN(eb.start_date)))::int % 10 = 0 THEN '10Y'
+     WHEN EXTRACT(YEAR FROM AGE(DATE '2024-10-12', MIN(eb.start_date)))::int % 5 = 0 THEN '5Y'
+     ELSE 'No souvenir' END
+FROM employees e
+JOIN employee_x_branches eb USING(employee_id)
+JOIN employees_x_positions ep ON ep.employee_id = e.employee_id AND ep.end_date IS NULL
+JOIN positions p USING(position_id)
+JOIN departments d USING(department_id)
+WHERE e.employee_id <> -1
+GROUP BY 1,2,3,4
+ORDER BY 1,2,3,4;
+
+-- Задание 3
+SELECT d.department_name, p.position_name,
+MIN(e.last_name||'|'||e.first_name||'|'||e.patronymic||'|Зарплата: '||s.salary_amount||' RUB'),
+MAX(e.last_name||'|'||e.first_name||'|'||e.patronymic||'|Зарплата: '||s.salary_amount||' RUB')
+FROM employees_x_positions ep
+JOIN positions p USING(position_id)
+JOIN departments d USING(department_id)
+JOIN employees e USING(employee_id)
+JOIN employees_x_salaries s ON s.employee_position_id = ep.employee_position_id AND s.end_date IS NULL
+WHERE ep.end_date IS NULL AND p.position_name NOT ILIKE '%директор%' AND p.position_name NOT ILIKE '%руководитель%'
+GROUP BY 1,2
+ORDER BY 1,2;
+
+-- Задание 4
+SELECT c.country_name, COUNT(DISTINCT eb.employee_id)
+FROM countries c
+JOIN cities ct USING(country_id)
+JOIN locations l USING(city_id)
+JOIN branches b USING(location_id)
+JOIN employee_x_branches eb ON eb.branch_id = b.branch_id AND eb.end_date IS NULL
+GROUP BY 1
+ORDER BY 1;
+
+-- Задание 5
+SELECT d.department_name, p.position_name, COUNT(*)
+FROM positions p
+JOIN departments d USING(department_id)
+LEFT JOIN employees_x_positions ep ON ep.position_id = p.position_id AND ep.end_date IS NULL
+WHERE ep.employee_position_id IS NULL
+GROUP BY 1,2
+ORDER BY 3 DESC, 1, 2;
+
+-- Задание 6
+SELECT e.first_name, e.last_name, e.employee_id, p.position_name
+FROM employees_x_positions ep
+JOIN employees e USING(employee_id)
+JOIN positions p USING(position_id)
+WHERE ep.end_date IS NULL AND ep.start_date <= DATE '2024-10-12' - INTERVAL '4 years' AND e.employee_id <> -1
+ORDER BY 1,2,4;
+
+-- Задание 7
+SELECT p.position_name, SUM(s.salary_amount),
+DENSE_RANK() OVER (ORDER BY SUM(s.salary_amount) DESC)
+FROM employees_x_positions ep
+JOIN positions p USING(position_id)
+JOIN employees_x_salaries s ON s.employee_position_id = ep.employee_position_id AND s.end_date IS NULL
+WHERE ep.end_date IS NULL
+GROUP BY 1
+ORDER BY 3;
+
+-- Задание 8
+WITH t AS (
+  SELECT employee_id, branch_id, start_date,
+         LAG(branch_id) OVER (PARTITION BY employee_id ORDER BY start_date) pb
+  FROM employee_x_branches)
+SELECT e.last_name, e.first_name, e.patronymic, ob.branch_name, t.start_date
+FROM t
+JOIN branches ob ON ob.branch_id = t.pb
+JOIN branches nb ON nb.branch_id = t.branch_id
+JOIN locations l USING(location_id)
+JOIN cities ct USING(city_id)
+JOIN countries c USING(country_id)
+JOIN employees e USING(employee_id)
+WHERE c.country_name = 'Кипр' AND t.pb IS NOT NULL
+ORDER BY 1,2,3;
+
+-- Задание 9
+WITH t AS (
+  SELECT employee_id, position_id, start_date,
+         LAG(position_id) OVER (PARTITION BY employee_id ORDER BY start_date) pp
+  FROM employees_x_positions)
+SELECT e.first_name, e.last_name, op.position_name, np.position_name
+FROM t
+JOIN employees e USING(employee_id)
+JOIN positions op ON op.position_id = t.pp
+JOIN positions np ON np.position_id = t.position_id
+WHERE t.pp IS NOT NULL AND EXTRACT(YEAR FROM t.start_date) = 2014
+ORDER BY 1,2;
+
+-- Задание 10
+WITH t AS (
+  SELECT e.first_name, e.last_name, ct.city_name,
+         ROW_NUMBER() OVER (PARTITION BY ct.city_name ORDER BY e.last_name, e.first_name) rn
+  FROM employees e
+  JOIN employee_x_branches eb ON eb.employee_id = e.employee_id AND eb.end_date IS NULL
+  JOIN branches b USING(branch_id)
+  JOIN locations l USING(location_id)
+  JOIN cities ct USING(city_id)
+  WHERE e.employee_id <> -1)
+SELECT first_name, last_name, city_name FROM t WHERE rn % 5 = 0
+ORDER BY 3,2,1;
+
+-- Задание 11
+WITH t AS (
+  SELECT b.branch_name, e.last_name||' '||e.first_name||' '||e.patronymic fio,
+         COUNT(*) OVER (PARTITION BY b.branch_id) cnt
+  FROM employees e
+  JOIN employee_x_branches eb ON eb.employee_id = e.employee_id AND eb.end_date IS NULL
+  JOIN branches b USING(branch_id)
+  WHERE e.employee_id <> -1)
+SELECT DISTINCT branch_name,
+NTH_VALUE(fio,5) OVER (PARTITION BY branch_name ORDER BY fio ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM t WHERE cnt > 5;
+
+-- Задание 12
+WITH cs AS (
+  SELECT employee_position_id, NTILE(3) OVER (ORDER BY salary_amount DESC) grp
+  FROM employees_x_salaries WHERE end_date IS NULL),
+yf AS (
+  SELECT cs.grp, EXTRACT(YEAR FROM a.accural_date)::int yr, SUM(a.accural_amount) fund
+  FROM cs
+  JOIN employees_x_positions ep USING(employee_position_id)
+  JOIN accurals a USING(employee_id)
+  WHERE EXTRACT(YEAR FROM a.accural_date) BETWEEN 2022 AND 2024
+  GROUP BY 1,2)
+SELECT CASE grp WHEN 1 THEN 'Высокий уровень' WHEN 2 THEN 'Средний уровень' ELSE 'Низкий уровень' END,
+       y1.yr::text||'||'||y2.yr::text,
+       y1.fund - y2.fund
+FROM yf y1 JOIN yf y2 ON y1.grp = y2.grp AND y1.yr = y2.yr + 1
+ORDER BY 1,2 DESC;
+
+-- Задание 13
+SELECT b.branch_name, c.country_name, COUNT(DISTINCT eb.employee_id),
+PERCENT_RANK() OVER (PARTITION BY c.country_id ORDER BY COUNT(DISTINCT eb.employee_id) DESC)
+FROM branches b
+JOIN locations l USING(location_id)
+JOIN cities ct USING(city_id)
+JOIN countries c USING(country_id)
+LEFT JOIN employee_x_branches eb ON eb.branch_id = b.branch_id AND eb.end_date IS NULL
+GROUP BY 1,2,3
+ORDER BY 2,1;
+
+-- Задание 14
+WITH t AS (
+  SELECT employee_id, start_date,
+         LAG(end_date) OVER (PARTITION BY employee_id ORDER BY start_date) pe
+  FROM employee_x_branches)
+SELECT e.last_name, e.first_name, e.patronymic, COUNT(*)
+FROM t JOIN employees e USING(employee_id)
+WHERE t.pe IS NOT NULL AND t.start_date > t.pe + INTERVAL '1 day'
+GROUP BY 1,2,3
+ORDER BY 4 DESC, 1, 2;
+
+-- Задание 15
+WITH dy AS (
+  SELECT d.department_name, EXTRACT(YEAR FROM a.accural_date)::int yr, SUM(a.accural_amount) fund
+  FROM accurals a
+  JOIN employees_x_positions ep USING(employee_id)
+  JOIN positions p USING(position_id)
+  JOIN departments d USING(department_id)
+  WHERE EXTRACT(YEAR FROM a.accural_date) BETWEEN 2019 AND 2024
+  GROUP BY 1,2)
+SELECT department_name,
+  COALESCE(SUM(fund) FILTER (WHERE yr=2020),0) - COALESCE(SUM(fund) FILTER (WHERE yr=2019),0),
+  COALESCE(SUM(fund) FILTER (WHERE yr=2021),0) - COALESCE(SUM(fund) FILTER (WHERE yr=2020),0),
+  COALESCE(SUM(fund) FILTER (WHERE yr=2022),0) - COALESCE(SUM(fund) FILTER (WHERE yr=2021),0),
+  COALESCE(SUM(fund) FILTER (WHERE yr=2023),0) - COALESCE(SUM(fund) FILTER (WHERE yr=2022),0),
+  COALESCE(SUM(fund) FILTER (WHERE yr=2024),0) - COALESCE(SUM(fund) FILTER (WHERE yr=2023),0)
+FROM dy GROUP BY 1 ORDER BY 1;
+
+-- Задание 16
+WITH dy AS (
+  SELECT d.department_name, EXTRACT(YEAR FROM a.accural_date)::int yr, SUM(a.accural_amount) fund
+  FROM accurals a
+  JOIN employees_x_positions ep USING(employee_id)
+  JOIN positions p USING(position_id)
+  JOIN departments d USING(department_id)
+  WHERE EXTRACT(YEAR FROM a.accural_date) BETWEEN 2019 AND 2024
+  GROUP BY 1,2)
+SELECT department_name,
+       yr::text || LAG(yr) OVER (PARTITION BY department_name ORDER BY yr)::text,
+       fund - LAG(fund) OVER (PARTITION BY department_name ORDER BY yr)
+FROM dy
+ORDER BY 1,2;
